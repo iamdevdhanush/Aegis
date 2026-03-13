@@ -1,17 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Aegis v2 — Popup Controller
+// AGS v3 — Popup Controller
 // ─────────────────────────────────────────────────────────────────────────────
-import { AnalyticsEngine } from './services/analyticsEngine.js';
 
 const $ = id => document.getElementById(id);
 
-// ── State ─────────────────────────────────────────────────────────────────────
 let analytics     = null;
 let timerInterval = null;
 let examStart     = null;
-
-// Camera in popup (separate stream from content script's)
 let popupStream   = null;
+let popupFaceTimer = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Boot
@@ -27,9 +24,6 @@ async function init() {
   listenBG();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Screen control
-// ─────────────────────────────────────────────────────────────────────────────
 function showDisclaimer() {
   $('disclaimer-screen').classList.add('active');
   $('dashboard-screen').classList.remove('active');
@@ -70,6 +64,9 @@ async function onEnd() {
   await bg('END_EXAM', {});
   stopMonitoring();
   showDisclaimer();
+  const btn = $('start-exam-btn');
+  btn.disabled = false;
+  btn.innerHTML = '<span class="btn-icon">▶</span> Start Exam';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,21 +74,17 @@ async function onEnd() {
 // ─────────────────────────────────────────────────────────────────────────────
 async function launchMonitoring() {
   examStart = Date.now();
-  analytics = new AnalyticsEngine();
-
   startTimer();
   await startPopupCamera();
   await restoreState();
-
-  setCard('tab',   'ACTIVE',       'active', 'green');
-  setCard('fs',    'ENFORCING',    'active', 'green');
-  setCard('camera','ACTIVE',       'active', 'green');
-  setCard('voice', 'LISTENING',    'active', 'green');
+  setCard('tab',    'ACTIVE',    'active', 'green');
+  setCard('fs',     'ENFORCING', 'active', 'green');
+  setCard('camera', 'ACTIVE',    'active', 'green');
+  setCard('voice',  'LISTENING', 'active', 'green');
 }
 
 async function resumeMonitoring() {
   examStart = Date.now();
-  analytics = new AnalyticsEngine();
   startTimer();
   await startPopupCamera();
   await restoreState();
@@ -99,43 +92,33 @@ async function resumeMonitoring() {
 
 function stopMonitoring() {
   if (timerInterval) clearInterval(timerInterval);
-  if (popupStream)   popupStream.getTracks().forEach(t => t.stop());
-  analytics = null;
+  if (popupFaceTimer) clearInterval(popupFaceTimer);
+  if (popupStream)    popupStream.getTracks().forEach(t => t.stop());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Popup camera feed — FIXED: proper load sequencing, canvas sizing, detection
+// Popup Camera with fixed face detection (NMS)
 // ─────────────────────────────────────────────────────────────────────────────
 async function startPopupCamera() {
   const video  = $('camera-feed');
   const canvas = $('camera-canvas');
-
-  // FIX 1: Set actual canvas buffer dimensions (not just CSS)
   canvas.width  = 160;
   canvas.height = 120;
 
   $('cam-feed-status').textContent = '● Requesting...';
 
   try {
-    // FIX 2: Use ideal constraints so Chrome picks best available resolution
     popupStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width:     { ideal: 640 },
-        height:    { ideal: 480 },
-        facingMode: 'user'
-      },
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
       audio: false
     });
-
     video.srcObject = popupStream;
 
-    // FIX 3: Wait for loadedmetadata before play() — ensures video dimensions exist
     await new Promise((resolve, reject) => {
       video.onloadedmetadata = resolve;
-      video.onerror = (e) => reject(new Error('Video load error: ' + e.message));
-      setTimeout(() => reject(new Error('Camera load timeout')), 8000);
+      video.onerror = reject;
+      setTimeout(reject, 8000);
     });
-
     await video.play();
 
     $('cam-feed-status').textContent = '● Live';
@@ -143,120 +126,167 @@ async function startPopupCamera() {
     $('camera-msg').textContent      = 'Analysing...';
     setCard('camera', 'ACTIVE', 'active', 'green');
 
-    // FIX 4: Give browser one frame-render cycle before sampling pixels
     await new Promise(r => setTimeout(r, 500));
-
     startPopupFaceDetect(video, canvas);
 
   } catch (err) {
-    console.error('[Aegis Camera]', err);
     $('cam-feed-status').textContent = '● Unavailable';
     $('camera-msg').textContent      = '⚠ ' + (err.message || 'Camera denied');
     setCard('camera', 'DENIED', 'error', 'red');
-    bg('LOG_VIOLATION', { eventType: 'CAMERA_DISABLED', metadata: { reason: err.message } });
   }
 }
 
-let popupFaceTimer = null;
-let consecutiveBlankFrames = 0;
+// ── Temporal state for popup face detection ───────────────────────────────
+let popupFaceHistory     = [];
+let popupFaceCountHist   = [];
+let popupPrevRegions     = [];
+const POPUP_HIST_SIZE    = 5;
 
 function startPopupFaceDetect(video, canvas) {
   if (popupFaceTimer) clearInterval(popupFaceTimer);
-  consecutiveBlankFrames = 0;
+  popupFaceHistory   = [];
+  popupFaceCountHist = [];
+  popupPrevRegions   = [];
 
   popupFaceTimer = setInterval(() => {
-    // FIX 5: Check videoWidth > 0, not readyState — videoWidth is 0 until frames arrive
     if (!video || video.videoWidth === 0 || video.paused || video.ended) return;
 
     try {
       const ctx = canvas.getContext('2d');
-      // FIX 6: Clear before each draw to avoid ghost frames
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-      const { personPresent, faceCount, avgBrightness, skinRatio } = analyseSkin(imageData);
+      const brightness = avgBrightness(imageData);
+      if (brightness < 8) { $('camera-msg').textContent = '⚠ Check camera'; return; }
 
-      // FIX 7: Skip blank/dark frames (camera warming up, privacy shutter)
-      if (avgBrightness < 8) {
-        consecutiveBlankFrames++;
-        if (consecutiveBlankFrames > 5) {
-          $('camera-msg').textContent = '⚠ Feed is dark — check camera';
+      // Spatial NMS face detection
+      const regions   = findSkinRegions(imageData, canvas.width, canvas.height);
+      const faceCount = applyNMS(regions);
+      const present   = faceCount > 0;
+
+      // Temporal smoothing
+      popupFaceHistory.push({ present, faceCount });
+      if (popupFaceHistory.length > POPUP_HIST_SIZE) popupFaceHistory.shift();
+      popupFaceCountHist.push(faceCount);
+      if (popupFaceCountHist.length > POPUP_HIST_SIZE) popupFaceCountHist.shift();
+
+      const presentFrames = popupFaceHistory.filter(f => f.present).length;
+      const stablePresent = (presentFrames / popupFaceHistory.length) >= 0.6;
+      const multiFrames   = popupFaceCountHist.filter(c => c > 1).length;
+      const stableMulti   = multiFrames >= Math.ceil(POPUP_HIST_SIZE * 0.6);
+
+      $('face-indicator').classList.toggle('visible', stablePresent);
+
+      if (stablePresent) {
+        $('camera-msg').textContent = stableMulti ? '⚠ Multiple faces' : '✓ Face detected';
+        if (stableMulti) {
+          bg('LOG_VIOLATION', { eventType: 'MULTIPLE_FACE_DETECTED', metadata: { count: faceCount } });
         }
-        return;
-      }
-      consecutiveBlankFrames = 0;
-
-      // Update popup face indicator
-      $('face-indicator').classList.toggle('visible', personPresent);
-
-      if (personPresent) {
-        $('camera-msg').textContent = faceCount > 1 ? '⚠ Multiple faces' : '✓ Face detected';
-        // Sync status to background so content script overlay updates too
-        bg('LOG_EVENT', { eventType: faceCount > 1 ? 'MULTIPLE_FACES' : 'FACE_DETECTED', metadata: {} });
       } else {
         $('camera-msg').textContent = '⚠ No face detected';
       }
 
     } catch (err) {
-      console.warn('[Aegis FaceDetect]', err.message);
+      console.warn('[AGS FaceDetect]', err.message);
     }
-  }, 1500); // Check every 1.5s (faster than before)
+  }, 1500);
 }
 
-function analyseSkin(imageData) {
+// ── Spatial face detection functions ─────────────────────────────────────
+function findSkinRegions(imageData, width, height) {
   const d = imageData.data;
-  let skin = 0, brightness = 0;
-  const total = d.length / 4;
+  const GRID = 4;
+  const cw = Math.floor(width / GRID);
+  const ch = Math.floor(height / GRID);
+  const cells = [];
 
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i], g = d[i+1], b = d[i+2];
-    brightness += (r + g + b) / 3;
-
-    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-
-    // FIX 8: Wider skin-tone range — catches more ethnicities + lighting conditions
-    const isSkin =
-      // Classic Kovac rule
-      (r > 95 && g > 40 && b > 20 && mx - mn > 15 && Math.abs(r-g) > 15 && r > g && r > b) ||
-      // Darker skin tones
-      (r > 220 && g > 210 && b > 170 && Math.abs(r-g) <= 15 && r > b && g > b) ||
-      // YCbCr approximation  
-      (r > 80 && g > 30 && b > 15 && r > g && r - b > 20);
-
-    if (isSkin) skin++;
+  for (let gy = 0; gy < GRID; gy++) {
+    for (let gx = 0; gx < GRID; gx++) {
+      let skin = 0, total = 0;
+      for (let y = gy*ch; y < (gy+1)*ch && y < height; y++) {
+        for (let x = gx*cw; x < (gx+1)*cw && x < width; x++) {
+          const i = (y * width + x) * 4;
+          if (isSkin(d[i], d[i+1], d[i+2])) skin++;
+          total++;
+        }
+      }
+      if (skin/total > 0.25) cells.push({ x:gx*cw, y:gy*ch, w:cw, h:ch, cx:gx*cw+cw/2, cy:gy*ch+ch/2 });
+    }
   }
 
-  const skinRatio    = skin / total;
-  const avgBrightness = brightness / total;
+  if (!cells.length) return [];
+  const visited = new Set(), clusters = [];
+  for (let i = 0; i < cells.length; i++) {
+    if (visited.has(i)) continue;
+    const cluster = [cells[i]]; visited.add(i);
+    for (let j = i+1; j < cells.length; j++) {
+      if (visited.has(j)) continue;
+      if (Math.abs(cells[i].cx-cells[j].cx) < cw*1.5 && Math.abs(cells[i].cy-cells[j].cy) < ch*1.5) {
+        cluster.push(cells[j]); visited.add(j);
+      }
+    }
+    clusters.push({
+      x: Math.min(...cluster.map(c=>c.x)), y: Math.min(...cluster.map(c=>c.y)),
+      w: Math.max(...cluster.map(c=>c.x+c.w)) - Math.min(...cluster.map(c=>c.x)),
+      h: Math.max(...cluster.map(c=>c.y+c.h)) - Math.min(...cluster.map(c=>c.y))
+    });
+  }
+  return clusters;
+}
 
-  return {
-    personPresent: skinRatio > 0.025, // FIX 9: Lower threshold (was 0.04)
-    faceCount:     skinRatio > 0.28 ? 2 : 1,
-    avgBrightness,
-    skinRatio
-  };
+function applyNMS(regions) {
+  if (!regions.length) return 0;
+  const kept = [];
+  for (const r of regions) {
+    let dup = false;
+    for (const k of kept) {
+      const ox = Math.max(0, Math.min(r.x+r.w,k.x+k.w) - Math.max(r.x,k.x));
+      const oy = Math.max(0, Math.min(r.y+r.h,k.y+k.h) - Math.max(r.y,k.y));
+      if ((ox*oy) / (Math.min(r.w*r.h, k.w*k.h)||1) > 0.70) { dup = true; break; }
+    }
+    if (!dup) kept.push(r);
+  }
+  popupPrevRegions = kept;
+  return kept.filter(r => r.w*r.h > 100).length;
+}
+
+function isSkin(r, g, b) {
+  return (
+    (r>95 && g>40 && b>20 && Math.max(r,g,b)-Math.min(r,g,b)>15 && Math.abs(r-g)>15 && r>g && r>b) ||
+    (r>220 && g>210 && b>170 && Math.abs(r-g)<=15 && r>b && g>b) ||
+    (r>80 && g>30 && b>15 && r>g && (r-b)>20)
+  );
+}
+
+function avgBrightness(imageData) {
+  let sum = 0;
+  for (let i = 0; i < imageData.data.length; i += 4)
+    sum += (imageData.data[i]+imageData.data[i+1]+imageData.data[i+2])/3;
+  return sum / (imageData.data.length / 4);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State restoration
 // ─────────────────────────────────────────────────────────────────────────────
 async function restoreState() {
-  const s = await store(['integrityScore','violations','riskLevel','events']);
-  const score      = s.integrityScore ?? 100;
-  const violations = s.violations ?? 0;
-  const riskLevel  = s.riskLevel ?? 'SAFE';
-  const events     = s.events ?? [];
+  const s = await store(['integrityScore','violations','riskLevel','events','cheatingProbability','behaviorRiskScore']);
+  const score      = s.integrityScore      ?? 100;
+  const violations = s.violations          ?? 0;
+  const riskLevel  = s.riskLevel           ?? 'SAFE';
+  const events     = s.events              ?? [];
+  const cheatProb  = s.cheatingProbability ?? 0;
+  const behavRisk  = s.behaviorRiskScore   ?? 0;
 
   applyScore(score, riskLevel);
+  applyAIScores(cheatProb, behavRisk, score);
   $('stat-violations').textContent = violations;
 
-  if (analytics) {
-    const summary = analytics.summarise(events);
-    applyAnalytics(summary);
-  }
+  // Count analytics
+  const counts = {};
+  events.forEach(e => { if (e.severity !== 'INFO') counts[e.eventType] = (counts[e.eventType]||0)+1; });
+  applyAnalytics(counts);
 
-  // Render recent events
   events.slice(-30).forEach(renderEvent);
   scrollBottom();
 }
@@ -281,21 +311,35 @@ function applyScore(score, level) {
   const badge = $('risk-badge');
   badge.className = 'risk-badge';
   badge.classList.add({ SAFE:'safe', LOW_RISK:'low', SUSPICIOUS:'suspicious', HIGH_RISK:'high' }[level] || 'safe');
-  $('risk-label').textContent = level.replace('_',' ');
+  $('risk-label').textContent = (level||'SAFE').replace('_',' ');
+}
+
+function applyAIScores(cheatProb, behavRisk, integrityScore) {
+  // AI scores section
+  const cheatEl = $('ai-cheat-val');
+  const riskEl  = $('ai-risk-val');
+  if (cheatEl) {
+    cheatEl.textContent = Math.round(cheatProb) + '%';
+    cheatEl.style.color = cheatProb > 60 ? 'var(--red)' : cheatProb > 30 ? 'var(--amber)' : 'var(--green)';
+    const bar = $('ai-cheat-bar');
+    if (bar) { bar.style.width = cheatProb + '%'; bar.style.background = cheatProb > 60 ? 'var(--red)' : 'var(--amber)'; }
+  }
+  if (riskEl) {
+    riskEl.textContent = Math.round(behavRisk) + '%';
+    const bar = $('ai-risk-bar');
+    if (bar) { bar.style.width = behavRisk + '%'; }
+  }
+}
+
+function applyAnalytics(counts) {
+  $('ac-tab').textContent  = counts['TAB_SWITCH']              || 0;
+  $('ac-copy').textContent = counts['COPY_ATTEMPT']            || 0;
+  $('ac-fs').textContent   = counts['EXIT_FULLSCREEN']         || 0;
+  $('ac-face').textContent = counts['FACE_NOT_DETECTED']       || 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Analytics display
-// ─────────────────────────────────────────────────────────────────────────────
-function applyAnalytics(summary) {
-  $('ac-tab').textContent  = summary.TAB_SWITCH        || 0;
-  $('ac-copy').textContent = summary.COPY_ATTEMPT       || 0;
-  $('ac-fs').textContent   = summary.EXIT_FULLSCREEN    || 0;
-  $('ac-face').textContent = summary.FACE_NOT_DETECTED  || 0;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Event timeline rendering
+// Event timeline
 // ─────────────────────────────────────────────────────────────────────────────
 function renderEvent(event) {
   const tl    = $('event-timeline');
@@ -330,13 +374,18 @@ function scrollBottom() {
 function listenBG() {
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'SCORE_UPDATED') {
-      const { score, riskLevel, violations } = msg.payload;
+      const { score, riskLevel, violations, cheatingProbability, behaviorRiskScore } = msg.payload;
       applyScore(score, riskLevel);
+      applyAIScores(cheatingProbability || 0, behaviorRiskScore || 0, score);
       $('stat-violations').textContent = violations ?? 0;
-      // Refresh analytics
       store('events').then(({ events = [] }) => {
-        if (analytics) applyAnalytics(analytics.summarise(events));
+        const counts = {};
+        events.forEach(e => { if (e.severity !== 'INFO') counts[e.eventType] = (counts[e.eventType]||0)+1; });
+        applyAnalytics(counts);
       });
+    }
+    if (msg.type === 'AI_SCORES_UPDATED') {
+      applyAIScores(msg.payload.cheatingProbability || 0, msg.payload.behaviorRiskScore || 0, 100);
     }
   });
 
@@ -386,11 +435,11 @@ function bg(type, payload) {
 }
 
 function animNum(el, from, to) {
-  const dur = 600, t0 = performance.now();
+  const dur=600, t0=performance.now();
   (function step(now) {
-    const p = Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
-    el.textContent = Math.round(from+(to-from)*e);
-    if (p<1) requestAnimationFrame(step);
+    const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
+    el.textContent=Math.round(from+(to-from)*e);
+    if(p<1) requestAnimationFrame(step);
   })(t0);
 }
 

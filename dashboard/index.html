@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AGS — Admin Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Reset & Theme ─────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg0:#020810;--bg1:#060F1E;--bg2:#0A1828;--bg3:#0F2038;
+  --border:#0A2A45;--border-glow:rgba(0,180,255,.2);
+  --cyan:#00BFFF;--cyan-dim:rgba(0,191,255,.15);
+  --green:#00FF88;--green-dim:rgba(0,255,136,.1);
+  --amber:#FFB800;--amber-dim:rgba(255,184,0,.12);
+  --red:#FF3A3A;--red-dim:rgba(255,58,58,.12);
+  --purple:#A855F7;
+  --text1:#C8E6FF;--text2:#5A8FAA;--text3:#1E4060;
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Rajdhani',system-ui,sans-serif;
+  --r:4px;
+}
+html,body{height:100%;background:var(--bg0);color:var(--text1);font-family:var(--sans);overflow:hidden}
+
+/* ── Scanline overlay ──────────────────────────────────────────────── */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);
+}
+/* CRT glow corner */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
+  background:radial-gradient(ellipse at center,transparent 60%,rgba(0,5,20,.7) 100%);
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+#app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:260px 1fr 300px;height:100vh;gap:0}
+#topbar{grid-column:1/-1;display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);background:var(--bg1);z-index:100}
+#sidebar{border-right:1px solid var(--border);background:var(--bg1);overflow-y:auto;display:flex;flex-direction:column}
+#main{background:var(--bg0);overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:14px}
+#panel{border-left:1px solid var(--border);background:var(--bg1);overflow-y:auto;display:flex;flex-direction:column}
+
+/* ── Topbar ─────────────────────────────────────────────────────────── */
+.topbar-logo{display:flex;align-items:center;gap:12px;padding:0 20px;border-right:1px solid var(--border);height:100%}
+.logo-hex{font-size:22px;color:var(--cyan);filter:drop-shadow(0 0 8px var(--cyan))}
+.logo-text{font-family:var(--mono);font-size:14px;color:var(--cyan);letter-spacing:.2em}
+.logo-sub{font-family:var(--mono);font-size:8px;color:var(--text3);letter-spacing:.1em;margin-top:2px}
+.topbar-stats{display:flex;align-items:stretch;height:100%}
+.tb-stat{display:flex;flex-direction:column;justify-content:center;padding:0 18px;border-right:1px solid var(--border);cursor:default}
+.tb-stat-val{font-family:var(--mono);font-size:18px;font-weight:600}
+.tb-stat-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-top:1px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:0;height:100%}
+.tb-connection{display:flex;align-items:center;gap:8px;padding:0 18px;border-left:1px solid var(--border);font-family:var(--mono);font-size:10px}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:var(--red)}
+.conn-dot.live{background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse-dot 2s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.3}}
+.tb-time{padding:0 18px;font-family:var(--mono);font-size:11px;color:var(--text2);border-left:1px solid var(--border);white-space:nowrap}
+
+/* ── NLP Query Bar ──────────────────────────────────────────────────── */
+.nlp-bar{flex:1;display:flex;align-items:center;gap:0;border-left:1px solid var(--border);padding:0 16px;height:100%}
+.nlp-prompt{font-family:var(--mono);font-size:11px;color:var(--text3);margin-right:8px;white-space:nowrap}
+.nlp-input{flex:1;background:transparent;border:none;outline:none;font-family:var(--mono);font-size:11px;color:var(--cyan);caret-color:var(--cyan)}
+.nlp-input::placeholder{color:var(--text3)}
+.nlp-btn{background:transparent;border:1px solid var(--border-glow);border-radius:var(--r);padding:4px 10px;font-family:var(--mono);font-size:9px;color:var(--cyan);cursor:pointer;transition:.2s;letter-spacing:.1em}
+.nlp-btn:hover{background:var(--cyan-dim);box-shadow:0 0 10px rgba(0,191,255,.2)}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+.sidebar-section{padding:10px 12px 6px;border-bottom:1px solid var(--border)}
+.sidebar-title{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px}
+.student-card{padding:8px 10px;border-radius:var(--r);cursor:pointer;transition:.15s;margin-bottom:4px;border:1px solid transparent;position:relative}
+.student-card:hover{background:var(--bg2);border-color:var(--border)}
+.student-card.active{background:var(--bg2);border-color:var(--cyan-dim)}
+.student-card.high{border-left:2px solid var(--red)}
+.student-card.suspicious{border-left:2px solid var(--amber)}
+.student-card.low{border-left:2px solid var(--cyan)}
+.student-card.safe{border-left:2px solid var(--green)}
+.sc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.sc-id{font-family:var(--mono);font-size:10px;color:var(--text1);letter-spacing:.05em}
+.sc-score{font-family:var(--mono);font-size:14px;font-weight:700}
+.sc-meta{display:flex;justify-content:space-between}
+.sc-violations{font-size:9px;color:var(--text3)}
+.sc-risk{font-family:var(--mono);font-size:9px;letter-spacing:.08em}
+.sc-cheat{font-size:9px;color:var(--text2)}
+.risk-SAFE{color:var(--green)}
+.risk-LOW_RISK{color:var(--cyan)}
+.risk-SUSPICIOUS{color:var(--amber)}
+.risk-HIGH_RISK{color:var(--red)}
+.no-students{padding:20px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--text3)}
+
+/* ── Main grid ──────────────────────────────────────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.3}
+.sc-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+.sc-value{font-family:var(--mono);font-size:28px;font-weight:700;line-height:1}
+.sc-sub{font-size:9px;color:var(--text3);margin-top:4px}
+.stat-card.danger .sc-value{color:var(--red);filter:drop-shadow(0 0 6px var(--red))}
+.stat-card.warn .sc-value{color:var(--amber);filter:drop-shadow(0 0 6px var(--amber))}
+.stat-card.good .sc-value{color:var(--green);filter:drop-shadow(0 0 6px var(--green))}
+.stat-card.info .sc-value{color:var(--cyan);filter:drop-shadow(0 0 6px var(--cyan))}
+
+/* ── Charts ─────────────────────────────────────────────────────────── */
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chart-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.chart-title{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px}
+.chart-wrap{position:relative;height:160px}
+
+/* ── Student session timeline ───────────────────────────────────────── */
+.timeline-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.timeline-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.tl-title{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.12em}
+.tl-student{font-family:var(--mono);font-size:9px;color:var(--cyan)}
+.timeline-scroll{max-height:140px;overflow-y:auto}
+.timeline-scroll::-webkit-scrollbar{width:2px}
+.timeline-scroll::-webkit-scrollbar-thumb{background:var(--bg3)}
+.tl-row{display:grid;grid-template-columns:62px 1fr 52px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(10,40,69,.5)}
+.tl-time{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.tl-event{font-size:10px;color:var(--text2);letter-spacing:.03em}
+.tl-sev{font-family:var(--mono);font-size:8px;text-align:right}
+.sev-HIGH{color:var(--red)}
+.sev-MEDIUM{color:var(--amber)}
+.sev-LOW{color:var(--cyan)}
+.sev-INFO{color:var(--text3)}
+
+/* ── Right panel ─────────────────────────────────────────────────────── */
+.panel-section{padding:12px;border-bottom:1px solid var(--border)}
+.panel-title{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px}
+.live-feed{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto}
+.live-feed::-webkit-scrollbar{width:2px}
+.live-feed::-webkit-scrollbar-thumb{background:var(--bg3)}
+.feed-item{display:grid;grid-template-columns:52px 1fr;gap:6px;align-items:center;padding:5px 8px;border-radius:var(--r);background:var(--bg2);animation:feed-in .3s ease}
+@keyframes feed-in{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+.feed-time{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.feed-info{display:flex;flex-direction:column;gap:1px}
+.feed-event{font-size:10px;color:var(--text1);letter-spacing:.03em}
+.feed-student{font-family:var(--mono);font-size:8px;color:var(--text3)}
+.feed-item.high{border-left:2px solid var(--red);background:rgba(255,58,58,.06)}
+.feed-item.medium{border-left:2px solid var(--amber);background:rgba(255,184,0,.06)}
+.feed-item.low{border-left:2px solid var(--cyan);background:rgba(0,191,255,.04)}
+
+/* ── AI Score panel ──────────────────────────────────────────────────── */
+.ai-score-display{display:flex;flex-direction:column;gap:8px}
+.ai-metric{display:flex;flex-direction:column;gap:4px}
+.ai-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;display:flex;justify-content:space-between}
+.ai-bar-track{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.ai-bar-fill{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.ai-val{font-family:var(--mono);font-size:12px}
+
+/* ── NLP results ─────────────────────────────────────────────────────── */
+.nlp-results{display:none;position:absolute;top:52px;left:0;right:0;background:var(--bg1);border-bottom:1px solid var(--border);padding:12px 20px;z-index:200;max-height:300px;overflow-y:auto}
+.nlp-results.visible{display:block}
+.nlp-result-header{font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.1em}
+.nlp-student-row{display:flex;gap:16px;align-items:center;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border);margin-bottom:4px;cursor:pointer;transition:.15s}
+.nlp-student-row:hover{background:var(--bg2)}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:2px}
+
+/* ── Glow flicker animation ──────────────────────────────────────────── */
+@keyframes glow-flicker{
+  0%,100%{filter:drop-shadow(0 0 6px var(--cyan))}
+  50%{filter:drop-shadow(0 0 12px var(--cyan)) brightness(1.1)}
+}
+.logo-hex{animation:glow-flicker 4s ease-in-out infinite}
+
+/* ── Alerts ─────────────────────────────────────────────────────────── */
+.alert-banner{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#1A0000,#400000);border:1px solid rgba(255,58,58,.4);border-radius:var(--r);padding:10px 16px;font-family:var(--mono);font-size:11px;color:#FFB0B0;z-index:9000;display:none;animation:feed-in .3s ease;box-shadow:0 0 20px rgba(255,58,58,.3)}
+.alert-banner.show{display:block}
+
+/* ── Replay button ──────────────────────────────────────────────────── */
+.replay-btn{background:transparent;border:1px solid var(--border-glow);border-radius:var(--r);padding:4px 10px;font-family:var(--mono);font-size:8px;color:var(--cyan);cursor:pointer;letter-spacing:.08em;transition:.2s}
+.replay-btn:hover{background:var(--cyan-dim)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Topbar ─────────────────────────────────────────────────────── -->
+  <div id="topbar">
+    <div class="topbar-logo">
+      <div class="logo-hex">◈</div>
+      <div><div class="logo-text">AGS</div><div class="logo-sub">ADMIN COMMAND CENTER</div></div>
+    </div>
+    <div class="topbar-stats">
+      <div class="tb-stat"><div class="tb-stat-val" id="tb-active" style="color:var(--green)">0</div><div class="tb-stat-lbl">Active</div></div>
+      <div class="tb-stat"><div class="tb-stat-val" id="tb-total" style="color:var(--cyan)">0</div><div class="tb-stat-lbl">Students</div></div>
+      <div class="tb-stat"><div class="tb-stat-val" id="tb-highrisk" style="color:var(--red)">0</div><div class="tb-stat-lbl">High Risk</div></div>
+      <div class="tb-stat"><div class="tb-stat-val" id="tb-violations" style="color:var(--amber)">0</div><div class="tb-stat-lbl">Violations</div></div>
+    </div>
+    <div class="nlp-bar">
+      <span class="nlp-prompt">▸ QUERY:</span>
+      <input class="nlp-input" id="nlp-input" placeholder='e.g. "show high risk students" or "who switched tabs more than 3 times"' />
+      <button class="nlp-btn" id="nlp-btn">RUN</button>
+    </div>
+    <div class="topbar-right">
+      <div class="tb-connection">
+        <div class="conn-dot" id="conn-dot"></div>
+        <span id="conn-label">OFFLINE</span>
+      </div>
+      <div class="tb-time" id="tb-time">--:--:--</div>
+    </div>
+  </div>
+
+  <!-- ── NLP Results (overlay) ──────────────────────────────────────── -->
+  <div class="nlp-results" id="nlp-results"></div>
+
+  <!-- ── Sidebar: Student Grid ──────────────────────────────────────── -->
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">LIVE STUDENTS</div>
+      <div id="student-list"><div class="no-students">No active students</div></div>
+    </div>
+    <div class="sidebar-section" style="flex:1">
+      <div class="sidebar-title">EXAM SESSIONS</div>
+      <div id="all-student-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Main Content ────────────────────────────────────────────────── -->
+  <div id="main">
+    <!-- Stats row -->
+    <div class="stats-grid">
+      <div class="stat-card danger"><div class="sc-label">High Risk Count</div><div class="sc-value" id="stat-highrisk">0</div><div class="sc-sub">Require review</div></div>
+      <div class="stat-card warn"><div class="sc-label">Avg Cheat Prob</div><div class="sc-value" id="stat-avgcheat">0%</div><div class="sc-sub">Across active sessions</div></div>
+      <div class="stat-card info"><div class="sc-label">Total Events</div><div class="sc-value" id="stat-events">0</div><div class="sc-sub">This session</div></div>
+      <div class="stat-card good"><div class="sc-label">Clean Students</div><div class="sc-value" id="stat-clean">0</div><div class="sc-sub">Integrity intact</div></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Risk Distribution</div>
+        <div class="chart-wrap"><canvas id="chart-risk"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Violation Heatmap (Hourly)</div>
+        <div class="chart-wrap"><canvas id="chart-heatmap"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Session Timeline -->
+    <div class="timeline-card">
+      <div class="timeline-card-header">
+        <span class="tl-title">SESSION TIMELINE</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="tl-student" id="tl-student-id">— No student selected —</span>
+          <button class="replay-btn" id="replay-btn" onclick="replaySession()">▶ REPLAY</button>
+        </div>
+      </div>
+      <div class="timeline-scroll" id="session-timeline">
+        <div style="padding:20px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--text3)">Select a student to view timeline</div>
+      </div>
+    </div>
+
+    <!-- Violation breakdown chart -->
+    <div class="chart-card">
+      <div class="chart-title">Violation Type Breakdown</div>
+      <div class="chart-wrap" style="height:130px"><canvas id="chart-breakdown"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Right Panel ─────────────────────────────────────────────────── -->
+  <div id="panel">
+    <!-- Live violation feed -->
+    <div class="panel-section">
+      <div class="panel-title">LIVE VIOLATION FEED</div>
+      <div class="live-feed" id="live-feed">
+        <div style="text-align:center;padding:16px;font-family:var(--mono);font-size:9px;color:var(--text3)">Waiting for events...</div>
+      </div>
+    </div>
+
+    <!-- AI Scores for selected student -->
+    <div class="panel-section">
+      <div class="panel-title">AI INTEGRITY ANALYSIS</div>
+      <div id="selected-student-id" style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:10px">No student selected</div>
+      <div class="ai-score-display" id="ai-scores">
+        <div class="ai-metric">
+          <div class="ai-label"><span>Cheating Probability</span><span class="ai-val" id="ai-cheat" style="color:var(--red)">-</span></div>
+          <div class="ai-bar-track"><div class="ai-bar-fill" id="bar-cheat" style="width:0%;background:var(--red)"></div></div>
+        </div>
+        <div class="ai-metric">
+          <div class="ai-label"><span>Behavior Risk</span><span class="ai-val" id="ai-risk" style="color:var(--amber)">-</span></div>
+          <div class="ai-bar-track"><div class="ai-bar-fill" id="bar-risk" style="width:0%;background:var(--amber)"></div></div>
+        </div>
+        <div class="ai-metric">
+          <div class="ai-label"><span>Integrity Score</span><span class="ai-val" id="ai-integrity" style="color:var(--green)">-</span></div>
+          <div class="ai-bar-track"><div class="ai-bar-fill" id="bar-integrity" style="width:0%;background:var(--green)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick stats for selected student -->
+    <div class="panel-section">
+      <div class="panel-title">SELECTED STUDENT</div>
+      <div id="selected-detail" style="font-family:var(--mono);font-size:9px;color:var(--text3);line-height:2">No student selected</div>
+    </div>
+
+    <!-- Report export -->
+    <div class="panel-section">
+      <div class="panel-title">REPORTS</div>
+      <button onclick="generateReport()" style="width:100%;padding:8px;background:transparent;border:1px solid var(--border-glow);border-radius:var(--r);font-family:var(--mono);font-size:9px;color:var(--cyan);cursor:pointer;letter-spacing:.1em;text-transform:uppercase;transition:.2s;margin-bottom:6px" onmouseover="this.style.background='var(--cyan-dim)'" onmouseout="this.style.background='transparent'">
+        GENERATE INTEGRITY REPORT
+      </button>
+      <button onclick="exportCSV()" style="width:100%;padding:8px;background:transparent;border:1px solid var(--border);border-radius:var(--r);font-family:var(--mono);font-size:9px;color:var(--text3);cursor:pointer;letter-spacing:.1em;text-transform:uppercase;transition:.2s" onmouseover="this.style.color='var(--text1)'" onmouseout="this.style.color='var(--text3)'">
+        EXPORT CSV
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Alert banner -->
+<div class="alert-banner" id="alert-banner"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// AGS Admin Command Center — JavaScript Controller
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API  = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000/ws/admin-' + Math.random().toString(36).substr(2,6);
+
+let ws             = null;
+let students       = [];
+let selectedStudent = null;
+let liveFeedItems  = [];
+let charts         = {};
+let violations     = 0;
+let isConnected    = false;
+
+// ── Clock ─────────────────────────────────────────────────────────────────
+setInterval(() => {
+  const now = new Date();
+  document.getElementById('tb-time').textContent =
+    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}, 1000);
+
+// ── WebSocket ─────────────────────────────────────────────────────────────
+function connect() {
+  try {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      isConnected = true;
+      setConnected(true);
+      ws.send(JSON.stringify({ type: 'PING' }));
+    };
+
+    ws.onmessage = ({ data }) => {
+      try { handleMessage(JSON.parse(data)); } catch {}
+    };
+
+    ws.onclose = () => {
+      isConnected = false;
+      setConnected(false);
+      setTimeout(connect, 3000); // Reconnect
+    };
+
+    ws.onerror = () => {
+      setConnected(false);
+    };
+  } catch (e) {
+    setTimeout(connect, 3000);
+  }
+}
+
+function setConnected(v) {
+  const dot  = document.getElementById('conn-dot');
+  const lbl  = document.getElementById('conn-label');
+  dot.className = 'conn-dot' + (v ? ' live' : '');
+  lbl.textContent = v ? 'LIVE' : 'OFFLINE';
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'NEW_EVENT':
+      handleNewEvent(msg.event, msg.student);
+      break;
+    case 'STUDENT_JOINED':
+      fetchStudents();
+      showAlert(`Student joined: ${msg.student?.student_id}`, 'info');
+      break;
+    case 'STUDENT_LEFT':
+      fetchStudents();
+      break;
+    case 'HEARTBEAT':
+      updateStudentInList(msg.studentId, { cheat_prob: msg.cheatProb, integrity_score: msg.score });
+      break;
+    case 'BATCH_EVENTS':
+      fetchStudents();
+      break;
+    case 'NLP_RESULT':
+      showNLPResults(msg.result);
+      break;
+  }
+}
+
+function handleNewEvent(event, student) {
+  if (!event) return;
+  violations++;
+  document.getElementById('tb-violations').textContent = violations;
+  document.getElementById('stat-events').textContent   = violations;
+
+  // Add to live feed
+  addFeedItem(event, student);
+
+  // Update student in sidebar
+  if (student) updateStudentInList(student.student_id, student);
+
+  // Alert on high severity
+  if (event.severity === 'HIGH') {
+    showAlert(`⚠ ${event.event_type.replace(/_/g,' ')} — ${event.student_id}`, 'high');
+  }
+
+  // Update timeline if selected student
+  if (selectedStudent && event.student_id === selectedStudent.student_id) {
+    addTimelineRow(event);
+    updateAIPanel(student);
+  }
+}
+
+// ── Data Fetching ─────────────────────────────────────────────────────────
+async function fetchStudents() {
+  try {
+    const res  = await fetch(`${API}/students`);
+    const data = await res.json();
+    students   = data.students || [];
+    renderSidebar();
+    updateTopbarStats();
+    updateCharts();
+  } catch {}
+}
+
+async function fetchOverview() {
+  try {
+    const res  = await fetch(`${API}/analytics/overview`);
+    const data = await res.json();
+    document.getElementById('stat-avgcheat').textContent = Math.round(data.avg_cheat_prob || 0) + '%';
+    updateBreakdownChart(data.violation_breakdown || {});
+  } catch {}
+}
+
+async function fetchStudentEvents(studentId) {
+  try {
+    const res  = await fetch(`${API}/students/${studentId}/events?limit=100`);
+    const data = await res.json();
+    return data.events || [];
+  } catch { return []; }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────
+function renderSidebar() {
+  const active  = students.filter(s => s.is_active);
+  const inactive = students.filter(s => !s.is_active);
+
+  document.getElementById('tb-active').textContent  = active.length;
+  document.getElementById('tb-total').textContent   = students.length;
+
+  const highRisk = students.filter(s => ['HIGH_RISK','SUSPICIOUS'].includes(s.risk_level)).length;
+  document.getElementById('tb-highrisk').textContent    = highRisk;
+  document.getElementById('stat-highrisk').textContent  = highRisk;
+  document.getElementById('stat-clean').textContent     = students.filter(s => s.risk_level === 'SAFE').length;
+
+  renderStudentList('student-list',   active,   true);
+  renderStudentList('all-student-list', inactive, false);
+}
+
+function renderStudentList(containerId, list, isActive) {
+  const el = document.getElementById(containerId);
+  if (!list.length) { el.innerHTML = `<div class="no-students">${isActive ? 'No active students' : 'No history'}</div>`; return; }
+
+  el.innerHTML = list.map(s => {
+    const riskClass = {HIGH_RISK:'high',SUSPICIOUS:'suspicious',LOW_RISK:'low',SAFE:'safe'}[s.risk_level] || 'safe';
+    const scoreColor = s.integrity_score >= 75 ? 'var(--green)' : s.integrity_score >= 50 ? 'var(--amber)' : 'var(--red)';
+    return `
+      <div class="student-card ${riskClass} ${selectedStudent?.student_id === s.student_id ? 'active' : ''}"
+           onclick="selectStudent('${s.student_id}')">
+        <div class="sc-top">
+          <span class="sc-id">${s.student_id}</span>
+          <span class="sc-score" style="color:${scoreColor}">${Math.round(s.integrity_score ?? 100)}</span>
+        </div>
+        <div class="sc-meta">
+          <span class="sc-violations">${s.violations ?? 0} violations</span>
+          <span class="sc-risk risk-${s.risk_level}">${s.risk_level?.replace('_',' ')}</span>
+        </div>
+        <div class="sc-cheat">Cheat prob: ${Math.round(s.cheat_prob ?? 0)}%</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateStudentInList(studentId, updates) {
+  const idx = students.findIndex(s => s.student_id === studentId);
+  if (idx !== -1) {
+    students[idx] = { ...students[idx], ...updates };
+    renderSidebar();
+  } else {
+    fetchStudents();
+  }
+}
+
+// ── Student Selection ─────────────────────────────────────────────────────
+async function selectStudent(studentId) {
+  selectedStudent = students.find(s => s.student_id === studentId);
+  if (!selectedStudent) return;
+
+  // Re-render sidebar to show active selection
+  renderSidebar();
+
+  // Update AI panel
+  updateAIPanel(selectedStudent);
+
+  // Load timeline
+  const events = await fetchStudentEvents(studentId);
+  renderTimeline(studentId, events);
+
+  // Update detail panel
+  document.getElementById('selected-student-id').textContent = studentId;
+  document.getElementById('selected-detail').innerHTML = `
+    <div style="color:var(--text2)">STUDENT: <span style="color:var(--cyan)">${selectedStudent.student_id}</span></div>
+    <div style="color:var(--text2)">EXAM:    <span style="color:var(--text1)">${selectedStudent.exam_id || '—'}</span></div>
+    <div style="color:var(--text2)">SCORE:   <span style="color:${selectedStudent.integrity_score >= 75 ? 'var(--green)' : 'var(--red)'}">${Math.round(selectedStudent.integrity_score ?? 100)}</span></div>
+    <div style="color:var(--text2)">RISK:    <span class="risk-${selectedStudent.risk_level}">${selectedStudent.risk_level}</span></div>
+    <div style="color:var(--text2)">VIOLS:   <span style="color:var(--amber)">${selectedStudent.violations ?? 0}</span></div>
+    <div style="color:var(--text2)">STATUS:  <span style="color:${selectedStudent.is_active ? 'var(--green)' : 'var(--text3)'}">${selectedStudent.is_active ? 'ACTIVE' : 'ENDED'}</span></div>
+  `;
+}
+
+function updateAIPanel(student) {
+  if (!student) return;
+  const cheat    = Math.round(student.cheat_prob ?? 0);
+  const risk     = Math.round(student.behavior_risk ?? 0);
+  const integrity = Math.round(student.integrity_score ?? 100);
+
+  document.getElementById('ai-cheat').textContent     = cheat + '%';
+  document.getElementById('ai-risk').textContent      = risk + '%';
+  document.getElementById('ai-integrity').textContent = integrity;
+  document.getElementById('bar-cheat').style.width     = cheat + '%';
+  document.getElementById('bar-risk').style.width      = risk + '%';
+  document.getElementById('bar-integrity').style.width = integrity + '%';
+  document.getElementById('selected-student-id').textContent = student.student_id || '—';
+}
+
+// ── Timeline ──────────────────────────────────────────────────────────────
+function renderTimeline(studentId, events) {
+  document.getElementById('tl-student-id').textContent = studentId;
+  const tl = document.getElementById('session-timeline');
+
+  if (!events.length) {
+    tl.innerHTML = '<div style="padding:16px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--text3)">No events recorded</div>';
+    return;
+  }
+
+  tl.innerHTML = events.slice(0, 60).map(e => {
+    const ts  = new Date(e.timestamp);
+    const t   = `${pad(ts.getHours())}:${pad(ts.getMinutes())}:${pad(ts.getSeconds())}`;
+    const sev = e.severity || 'INFO';
+    return `
+      <div class="tl-row">
+        <span class="tl-time">${t}</span>
+        <span class="tl-event">${e.event_type.replace(/_/g,' ')}</span>
+        <span class="tl-sev sev-${sev}">${sev}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function addTimelineRow(event) {
+  const tl = document.getElementById('session-timeline');
+  const ts  = new Date(event.timestamp);
+  const t   = `${pad(ts.getHours())}:${pad(ts.getMinutes())}:${pad(ts.getSeconds())}`;
+  const sev = event.severity || 'INFO';
+  const row = document.createElement('div');
+  row.className = 'tl-row';
+  row.innerHTML = `
+    <span class="tl-time">${t}</span>
+    <span class="tl-event">${event.event_type.replace(/_/g,' ')}</span>
+    <span class="tl-sev sev-${sev}">${sev}</span>
+  `;
+  tl.prepend(row);
+  if (tl.children.length > 80) tl.lastChild?.remove();
+}
+
+async function replaySession() {
+  if (!selectedStudent) { showAlert('Select a student first', 'info'); return; }
+  const events = await fetchStudentEvents(selectedStudent.student_id);
+  if (!events.length) { showAlert('No events to replay', 'info'); return; }
+
+  const tl = document.getElementById('session-timeline');
+  tl.innerHTML = '';
+  let i = 0;
+
+  const replay = setInterval(() => {
+    if (i >= events.length) { clearInterval(replay); return; }
+    addTimelineRow(events[events.length - 1 - i]);
+    i++;
+  }, 200);
+}
+
+// ── Live Feed ─────────────────────────────────────────────────────────────
+function addFeedItem(event, student) {
+  const feed  = document.getElementById('live-feed');
+  const empty = feed.querySelector('[style*="text-align:center"]');
+  if (empty) empty.remove();
+
+  const ts  = new Date(event.timestamp || Date.now());
+  const t   = `${pad(ts.getHours())}:${pad(ts.getMinutes())}`;
+  const sev = (event.severity || 'info').toLowerCase();
+
+  const el = document.createElement('div');
+  el.className = `feed-item ${sev}`;
+  el.innerHTML = `
+    <span class="feed-time">${t}</span>
+    <div class="feed-info">
+      <span class="feed-event">${event.event_type.replace(/_/g,' ')}</span>
+      <span class="feed-student">${event.student_id || '—'}</span>
+    </div>
+  `;
+  feed.prepend(el);
+
+  liveFeedItems.push(event);
+  if (feed.children.length > 40) feed.lastChild?.remove();
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────
+function initCharts() {
+  const chartDefaults = {
+    color:      'rgba(200,230,255,.7)',
+    borderColor: 'transparent',
+    font:       { family: "'Share Tech Mono', monospace", size: 10 }
+  };
+  Chart.defaults.color      = chartDefaults.color;
+  Chart.defaults.borderColor = chartDefaults.borderColor;
+  Chart.defaults.font        = chartDefaults.font;
+
+  // Risk distribution doughnut
+  charts.risk = new Chart(document.getElementById('chart-risk'), {
+    type: 'doughnut',
+    data: {
+      labels: ['SAFE', 'LOW RISK', 'SUSPICIOUS', 'HIGH RISK'],
+      datasets: [{ data: [0,0,0,0], backgroundColor: ['#00FF88','#00BFFF','#FFB800','#FF3A3A'], borderWidth: 0, hoverOffset: 4 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, cutout:'68%',
+      plugins:{ legend:{ position:'right', labels:{ padding:12, boxWidth:10, font:{size:9} } } }
+    }
+  });
+
+  // Heatmap bar chart
+  charts.heatmap = new Chart(document.getElementById('chart-heatmap'), {
+    type: 'bar',
+    data: {
+      labels: Array.from({length:24}, (_,i) => i.toString().padStart(2,'0')),
+      datasets: [{ data: Array(24).fill(0), backgroundColor: 'rgba(0,191,255,.35)', borderColor: 'rgba(0,191,255,.7)', borderWidth: 1, borderRadius: 2 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{ grid:{color:'rgba(10,40,69,.5)'}, ticks:{font:{size:8}} },
+        y:{ grid:{color:'rgba(10,40,69,.5)'}, ticks:{font:{size:8}} }
+      },
+      plugins:{ legend:{ display:false } }
+    }
+  });
+
+  // Violation breakdown
+  charts.breakdown = new Chart(document.getElementById('chart-breakdown'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: 'rgba(255,184,0,.4)', borderColor: '#FFB800', borderWidth: 1, borderRadius: 2 }] },
+    options: {
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      scales:{
+        x:{ grid:{color:'rgba(10,40,69,.5)'}, ticks:{font:{size:8}} },
+        y:{ grid:{display:false}, ticks:{font:{size:9}} }
+      },
+      plugins:{ legend:{ display:false } }
+    }
+  });
+}
+
+function updateCharts() {
+  const dist = { SAFE:0, LOW_RISK:0, SUSPICIOUS:0, HIGH_RISK:0 };
+  students.forEach(s => { dist[s.risk_level] = (dist[s.risk_level]||0)+1; });
+
+  if (charts.risk) {
+    charts.risk.data.datasets[0].data = [dist.SAFE, dist.LOW_RISK, dist.SUSPICIOUS, dist.HIGH_RISK];
+    charts.risk.update('none');
+  }
+}
+
+function updateBreakdownChart(breakdown) {
+  if (!charts.breakdown) return;
+  const entries = Object.entries(breakdown).sort((a,b) => b[1]-a[1]).slice(0,8);
+  charts.breakdown.data.labels   = entries.map(([k]) => k.replace(/_/g,' ').toLowerCase());
+  charts.breakdown.data.datasets[0].data = entries.map(([,v]) => v);
+  charts.breakdown.update('none');
+}
+
+function updateTopbarStats() {
+  const active   = students.filter(s => s.is_active).length;
+  const highRisk = students.filter(s => ['HIGH_RISK','SUSPICIOUS'].includes(s.risk_level)).length;
+  document.getElementById('tb-active').textContent   = active;
+  document.getElementById('tb-total').textContent    = students.length;
+  document.getElementById('tb-highrisk').textContent = highRisk;
+  document.getElementById('stat-highrisk').textContent = highRisk;
+}
+
+// ── Heatmap fetch ─────────────────────────────────────────────────────────
+async function fetchHeatmap() {
+  try {
+    const res  = await fetch(`${API}/analytics/violation-heatmap`);
+    const data = await res.json();
+    if (charts.heatmap) {
+      charts.heatmap.data.datasets[0].data = Object.values(data);
+      charts.heatmap.update('none');
+    }
+  } catch {}
+}
+
+// ── NLP Query ─────────────────────────────────────────────────────────────
+document.getElementById('nlp-btn').addEventListener('click', runNLPQuery);
+document.getElementById('nlp-input').addEventListener('keydown', e => { if (e.key === 'Enter') runNLPQuery(); });
+
+async function runNLPQuery() {
+  const query = document.getElementById('nlp-input').value.trim();
+  if (!query) return;
+
+  if (ws && isConnected) {
+    ws.send(JSON.stringify({ type: 'NLP_QUERY', query }));
+  } else {
+    // Fallback: client-side filter
+    const filtered = filterStudentsLocally(query);
+    showNLPResults({ students: filtered, count: filtered.length });
+  }
+}
+
+function filterStudentsLocally(query) {
+  const q = query.toLowerCase();
+  let result = [...students];
+
+  if (q.includes('high risk') || q.includes('high-risk')) result = result.filter(s => s.risk_level === 'HIGH_RISK');
+  else if (q.includes('suspicious')) result = result.filter(s => s.risk_level === 'SUSPICIOUS');
+  else if (q.includes('safe')) result = result.filter(s => s.risk_level === 'SAFE');
+
+  const numMatch = q.match(/(?:more than|above|over|>)\s*(\d+)/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1]);
+    if (q.includes('cheat') || q.includes('prob')) result = result.filter(s => (s.cheat_prob||0) >= n);
+    else if (q.includes('violation')) result = result.filter(s => (s.violations||0) >= n);
+  }
+
+  return result;
+}
+
+function showNLPResults(data) {
+  const el = document.getElementById('nlp-results');
+  el.className = 'nlp-results visible';
+
+  if (!data.students?.length) {
+    el.innerHTML = '<div class="nlp-result-header">NO RESULTS FOUND</div>';
+    setTimeout(() => el.classList.remove('visible'), 3000);
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="nlp-result-header">${data.count} RESULT${data.count !== 1 ? 'S' : ''} FOUND</div>
+    ${data.students.slice(0,10).map(s => `
+      <div class="nlp-student-row" onclick="selectStudent('${s.student_id}');this.closest('.nlp-results').classList.remove('visible')">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--cyan);flex:1">${s.student_id}</span>
+        <span class="risk-${s.risk_level}" style="font-family:var(--mono);font-size:9px">${s.risk_level}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--amber);margin-left:12px">${Math.round(s.cheat_prob||0)}%</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-left:12px">${s.violations||0} viols</span>
+      </div>
+    `).join('')}
+  `;
+
+  setTimeout(() => el.classList.remove('visible'), 8000);
+}
+
+// Hide NLP results on click outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#nlp-results') && !e.target.closest('.nlp-bar')) {
+    document.getElementById('nlp-results').classList.remove('visible');
+  }
+});
+
+// ── Report Generation ─────────────────────────────────────────────────────
+async function generateReport() {
+  if (!selectedStudent) { showAlert('Select a student first', 'info'); return; }
+
+  try {
+    const res  = await fetch(`${API}/students/${selectedStudent.student_id}/report`);
+    const report = await res.json();
+
+    const reportWindow = window.open('', '_blank', 'width=700,height=800');
+    reportWindow.document.write(`
+      <html><head><title>AGS Report — ${report.student_id}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+      <style>body{background:#020810;color:#C8E6FF;font-family:'Rajdhani',sans-serif;padding:30px}
+      h1{font-family:'Share Tech Mono',monospace;color:#00BFFF;font-size:18px;letter-spacing:.15em;margin-bottom:20px}
+      .section{margin:20px 0;padding:16px;border:1px solid #0A2A45;border-radius:4px}
+      .section-title{font-family:'Share Tech Mono',monospace;font-size:10px;color:#1E4060;text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px}
+      .metric{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #0A2A45;font-size:13px}
+      .val-danger{color:#FF3A3A}.val-good{color:#00FF88}.val-warn{color:#FFB800}.val-info{color:#00BFFF}
+      .tl-row{display:flex;gap:12px;padding:4px 0;font-family:'Share Tech Mono',monospace;font-size:10px;color:#5A8FAA}
+      </style></head><body>
+      <h1>◈ AGS — INTEGRITY REPORT</h1>
+      <div class="section">
+        <div class="section-title">STUDENT SUMMARY</div>
+        <div class="metric"><span>Student ID</span><span class="val-info">${report.student_id}</span></div>
+        <div class="metric"><span>Exam ID</span><span>${report.exam_id || '—'}</span></div>
+        <div class="metric"><span>Integrity Score</span><span class="${report.integrity_score >= 75 ? 'val-good' : 'val-danger'}">${Math.round(report.integrity_score)}</span></div>
+        <div class="metric"><span>Cheating Probability</span><span class="${report.cheating_probability >= 50 ? 'val-danger' : 'val-good'}">${report.cheating_probability}%</span></div>
+        <div class="metric"><span>Risk Classification</span><span class="val-warn">${report.risk_classification}</span></div>
+        <div class="metric"><span>Total Violations</span><span class="val-warn">${report.total_violations}</span></div>
+      </div>
+      <div class="section">
+        <div class="section-title">VIOLATION BREAKDOWN</div>
+        ${Object.entries(report.violation_breakdown || {}).map(([k,v]) =>
+          `<div class="metric"><span>${k.replace(/_/g,' ')}</span><span class="val-warn">${v}</span></div>`
+        ).join('')}
+      </div>
+      <div class="section">
+        <div class="section-title">SESSION TIMELINE (LAST 30)</div>
+        ${(report.session_timeline || []).slice(-30).map(e =>
+          `<div class="tl-row"><span>${new Date(e.time).toLocaleTimeString()}</span><span>${e.event.replace(/_/g,' ')}</span><span style="color:${e.severity==='HIGH'?'#FF3A3A':e.severity==='MEDIUM'?'#FFB800':'#00BFFF'}">${e.severity}</span></div>`
+        ).join('')}
+      </div>
+      <p style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#1E4060;margin-top:20px">Generated: ${new Date().toISOString()} — AGS v3.0</p>
+      </body></html>
+    `);
+    reportWindow.document.close();
+  } catch (e) {
+    showAlert('Failed to generate report. Backend offline?', 'high');
+  }
+}
+
+async function exportCSV() {
+  const rows = [['student_id','exam_id','integrity_score','cheat_prob','risk_level','violations'].join(',')];
+  students.forEach(s => rows.push([s.student_id, s.exam_id, s.integrity_score, s.cheat_prob, s.risk_level, s.violations].join(',')));
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: `ags-export-${Date.now()}.csv` });
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── Alert ─────────────────────────────────────────────────────────────────
+let alertTimer;
+function showAlert(msg, type = 'high') {
+  const el = document.getElementById('alert-banner');
+  el.textContent = msg;
+  el.style.borderColor = type === 'high' ? 'rgba(255,58,58,.4)' : 'rgba(0,191,255,.4)';
+  el.style.color = type === 'high' ? '#FFB0B0' : '#B0D8FF';
+  el.classList.add('show');
+  clearTimeout(alertTimer);
+  alertTimer = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+function pad(n) { return String(n).padStart(2,'0'); }
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+initCharts();
+connect();
+fetchStudents();
+fetchOverview();
+fetchHeatmap();
+
+// Periodic refresh
+setInterval(fetchStudents,  5000);
+setInterval(fetchOverview, 15000);
+setInterval(fetchHeatmap,  30000);
+</script>
+</body>
+</html>

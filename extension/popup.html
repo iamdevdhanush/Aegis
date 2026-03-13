@@ -3,55 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aegis Monitor</title>
+  <title>AGS Monitor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono:wght@400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
 
-  <!-- ─── Disclaimer / Consent ──────────────────────────────────────────── -->
+  <!-- ─── Disclaimer ─────────────────────────────────────────────────────── -->
   <div id="disclaimer-screen" class="screen active">
     <div class="disclaimer-wrapper">
       <div class="disclaimer-badge">
-        <span class="badge-icon">🛡</span>
-        <span>AEGIS</span>
+        <span class="badge-icon">◈</span>
+        <span>AGS v3.0</span>
       </div>
 
-      <h1 class="disclaimer-title">Exam Monitoring<br><span class="accent">Notice</span></h1>
+      <h1 class="disclaimer-title">AI Exam<br><span class="accent">Guardrail</span></h1>
 
       <p class="disclaimer-intro">
-        Before your exam begins, please read and acknowledge the following monitoring policies.
+        AI-powered integrity monitoring. All activity is analyzed in real-time.
       </p>
 
       <div class="notice-list">
         <div class="notice-item">
           <div class="notice-dot blue"></div>
           <div>
-            <strong>Browser Activity</strong>
-            <p>Tab switches, copy/paste, keyboard shortcuts, and page refreshes are continuously monitored.</p>
+            <strong>AI Behavior Analysis</strong>
+            <p>Mouse patterns, typing rhythm and interaction frequency are analyzed for anomalies.</p>
           </div>
         </div>
         <div class="notice-item">
           <div class="notice-dot green"></div>
           <div>
-            <strong>Fullscreen Required</strong>
-            <p>You must remain in fullscreen mode. Exiting will trigger a violation and score reduction.</p>
+            <strong>Fullscreen Enforced</strong>
+            <p>Exiting fullscreen triggers a violation and immediate restoration attempt.</p>
           </div>
         </div>
         <div class="notice-item">
           <div class="notice-dot amber"></div>
           <div>
-            <strong>Camera Required</strong>
-            <p>Your webcam must remain enabled throughout the exam. Face presence is verified in real time.</p>
+            <strong>Face Detection (NMS)</strong>
+            <p>Spatial face detection with duplicate filtering. Multiple faces are flagged.</p>
           </div>
         </div>
         <div class="notice-item">
           <div class="notice-dot red"></div>
           <div>
-            <strong>Microphone Required</strong>
-            <p>Audio monitoring is active. Sustained speech or background voices will reduce your score.</p>
+            <strong>Screen & DevTools Detection</strong>
+            <p>Capture attempts, DevTools and overlay extensions are actively monitored.</p>
           </div>
         </div>
       </div>
@@ -59,11 +58,11 @@
       <div class="student-inputs">
         <div class="input-group">
           <label>Student ID</label>
-          <input type="text" id="student-id-input" placeholder="Enter student ID" />
+          <input type="text" id="student-id-input" placeholder="e.g. STU-001" />
         </div>
         <div class="input-group">
           <label>Exam ID</label>
-          <input type="text" id="exam-id-input" placeholder="Enter exam code" />
+          <input type="text" id="exam-id-input" placeholder="e.g. EXM-2024" />
         </div>
       </div>
 
@@ -72,22 +71,19 @@
         Start Exam
       </button>
 
-      <p class="consent-note">
-        By clicking Start Exam, you confirm you have read and agree to the monitoring terms above.
-      </p>
+      <p class="consent-note">By clicking Start Exam, you consent to AI-powered monitoring.</p>
     </div>
   </div>
 
-  <!-- ─── Main Dashboard ────────────────────────────────────────────────── -->
+  <!-- ─── Dashboard ──────────────────────────────────────────────────────── -->
   <div id="dashboard-screen" class="screen">
 
-    <!-- Header -->
     <header class="header">
       <div class="header-left">
-        <div class="logo-mark">⬡</div>
+        <div class="logo-mark">◈</div>
         <div>
-          <div class="logo-text">AEGIS</div>
-          <div class="logo-sub">Enterprise v2.0</div>
+          <div class="logo-text">AGS</div>
+          <div class="logo-sub">AI Guardrail v3.0</div>
         </div>
       </div>
       <div class="header-right">
@@ -96,7 +92,7 @@
       </div>
     </header>
 
-    <!-- Integrity Score Ring -->
+    <!-- Score ring -->
     <div class="score-section">
       <div class="score-ring-wrapper">
         <svg class="score-ring" viewBox="0 0 120 120" width="140" height="140">
@@ -116,6 +112,28 @@
       </div>
     </div>
 
+    <!-- AI scores mini-panel -->
+    <div class="ai-panel">
+      <div class="ai-panel-header">
+        <span class="ai-panel-title">AI ANALYSIS</span>
+        <span class="ai-live-badge">LIVE</span>
+      </div>
+      <div class="ai-metric-row">
+        <span class="ai-metric-label">Cheat Probability</span>
+        <div class="ai-bar-wrap">
+          <div class="ai-bar-track"><div class="ai-bar-fill" id="ai-cheat-bar" style="width:0%;background:var(--red)"></div></div>
+        </div>
+        <span class="ai-metric-val" id="ai-cheat-val">0%</span>
+      </div>
+      <div class="ai-metric-row">
+        <span class="ai-metric-label">Behavior Risk</span>
+        <div class="ai-bar-wrap">
+          <div class="ai-bar-track"><div class="ai-bar-fill" id="ai-risk-bar" style="width:0%;background:var(--amber)"></div></div>
+        </div>
+        <span class="ai-metric-val" id="ai-risk-val">0%</span>
+      </div>
+    </div>
+
     <!-- Monitor Status Cards -->
     <div class="status-cards">
       <div class="status-card">
@@ -126,7 +144,6 @@
         </div>
         <div class="card-led green" id="led-tab"></div>
       </div>
-
       <div class="status-card">
         <div class="card-icon">⊡</div>
         <div class="card-info">
@@ -135,23 +152,21 @@
         </div>
         <div class="card-led" id="led-fs"></div>
       </div>
-
       <div class="status-card">
         <div class="card-icon">◉</div>
         <div class="card-info">
-          <span class="card-name">Camera</span>
-          <span class="card-state" id="state-camera">INITIALISING</span>
+          <span class="card-name">Camera (NMS)</span>
+          <span class="card-state" id="state-camera">INIT</span>
         </div>
         <div class="card-led" id="led-camera"></div>
       </div>
-
       <div class="status-card">
         <div class="card-icon">◈</div>
         <div class="card-info">
-          <span class="card-name">Voice Monitor</span>
-          <span class="card-state" id="state-voice">INITIALISING</span>
+          <span class="card-name">Sentinel</span>
+          <span class="card-state active" id="state-voice">ACTIVE</span>
         </div>
-        <div class="card-led" id="led-voice"></div>
+        <div class="card-led green" id="led-voice"></div>
       </div>
     </div>
 
@@ -172,7 +187,7 @@
       </div>
     </div>
 
-    <!-- Stats Row -->
+    <!-- Stats -->
     <div class="stats-row">
       <div class="stat-box">
         <div class="stat-value danger" id="stat-violations">0</div>
@@ -188,7 +203,7 @@
       </div>
     </div>
 
-    <!-- Analytics Summary -->
+    <!-- Analytics grid -->
     <div class="analytics-section">
       <div class="section-header">
         <span class="section-label">Behaviour Analytics</span>
@@ -213,7 +228,6 @@
       </div>
     </div>
 
-    <!-- End Exam -->
     <button class="btn-end" id="end-exam-btn">End Exam Session</button>
   </div>
 
