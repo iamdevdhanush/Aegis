@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- ─── Disclaimer / Consent ──────────────────────────────────────────── -->
+  <div id="disclaimer-screen" class="screen active">
+    <div class="disclaimer-wrapper">
+      <div class="disclaimer-badge">
+        <span class="badge-icon">🛡</span>
+        <span>AEGIS</span>
+      </div>
+
+      <h1 class="disclaimer-title">Exam Monitoring<br><span class="accent">Notice</span></h1>
+
+      <p class="disclaimer-intro">
+        Before your exam begins, please read and acknowledge the following monitoring policies.
+      </p>
+
+      <div class="notice-list">
+        <div class="notice-item">
+          <div class="notice-dot blue"></div>
+          <div>
+            <strong>Browser Activity</strong>
+            <p>Tab switches, copy/paste, keyboard shortcuts, and page refreshes are continuously monitored.</p>
+          </div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-dot green"></div>
+          <div>
+            <strong>Fullscreen Required</strong>
+            <p>You must remain in fullscreen mode. Exiting will trigger a violation and score reduction.</p>
+          </div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-dot amber"></div>
+          <div>
+            <strong>Camera Required</strong>
+            <p>Your webcam must remain enabled throughout the exam. Face presence is verified in real time.</p>
+          </div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-dot red"></div>
+          <div>
+            <strong>Microphone Required</strong>
+            <p>Audio monitoring is active. Sustained speech or background voices will reduce your score.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="student-inputs">
+        <div class="input-group">
+          <label>Student ID</label>
+          <input type="text" id="student-id-input" placeholder="Enter student ID" />
+        </div>
+        <div class="input-group">
+          <label>Exam ID</label>
+          <input type="text" id="exam-id-input" placeholder="Enter exam code" />
+        </div>
+      </div>
+
+      <button id="start-exam-btn" class="btn-start">
+        <span class="btn-icon">▶</span>
+        Start Exam
+      </button>
+
+      <p class="consent-note">
+        By clicking Start Exam, you confirm you have read and agree to the monitoring terms above.
+      </p>
+    </div>
+  </div>
+
+  <!-- ─── Main Dashboard ────────────────────────────────────────────────── -->
+  <div id="dashboard-screen" class="screen">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo-mark">⬡</div>
+        <div>
+          <div class="logo-text">AEGIS</div>
+          <div class="logo-sub">Enterprise v2.0</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="status-dot" id="status-dot"></div>
+        <span class="status-label" id="status-label">ACTIVE</span>
+      </div>
+    </header>
+
+    <!-- Integrity Score Ring -->
+    <div class="score-section">
+      <div class="score-ring-wrapper">
+        <svg class="score-ring" viewBox="0 0 120 120" width="140" height="140">
+          <circle class="ring-track" cx="60" cy="60" r="52" />
+          <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52"
+            stroke-dasharray="326.73" stroke-dashoffset="0"
+            stroke-linecap="round" transform="rotate(-90 60 60)" />
+        </svg>
+        <div class="score-inner">
+          <div class="score-value" id="score-value">100</div>
+          <div class="score-label">INTEGRITY</div>
+        </div>
+      </div>
+      <div class="risk-badge safe" id="risk-badge">
+        <span class="risk-dot"></span>
+        <span id="risk-label">SAFE</span>
+      </div>
+    </div>
+
+    <!-- Monitor Status Cards -->
+    <div class="status-cards">
+      <div class="status-card">
+        <div class="card-icon">⬡</div>
+        <div class="card-info">
+          <span class="card-name">Tab Monitor</span>
+          <span class="card-state active" id="state-tab">ACTIVE</span>
+        </div>
+        <div class="card-led green" id="led-tab"></div>
+      </div>
+
+      <div class="status-card">
+        <div class="card-icon">⊡</div>
+        <div class="card-info">
+          <span class="card-name">Fullscreen</span>
+          <span class="card-state" id="state-fs">CHECKING</span>
+        </div>
+        <div class="card-led" id="led-fs"></div>
+      </div>
+
+      <div class="status-card">
+        <div class="card-icon">◉</div>
+        <div class="card-info">
+          <span class="card-name">Camera</span>
+          <span class="card-state" id="state-camera">INITIALISING</span>
+        </div>
+        <div class="card-led" id="led-camera"></div>
+      </div>
+
+      <div class="status-card">
+        <div class="card-icon">◈</div>
+        <div class="card-info">
+          <span class="card-name">Voice Monitor</span>
+          <span class="card-state" id="state-voice">INITIALISING</span>
+        </div>
+        <div class="card-led" id="led-voice"></div>
+      </div>
+    </div>
+
+    <!-- Camera Feed -->
+    <div class="camera-section">
+      <div class="camera-header">
+        <span class="section-label">Live Feed</span>
+        <span class="cam-status" id="cam-feed-status">● Connecting...</span>
+      </div>
+      <div class="camera-container">
+        <video id="camera-feed" autoplay muted playsinline></video>
+        <canvas id="camera-canvas" style="display:none;"></canvas>
+        <div class="camera-overlay">
+          <div class="cam-grid"></div>
+          <div class="face-indicator" id="face-indicator"></div>
+          <div class="camera-msg" id="camera-msg">Requesting camera...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-value danger" id="stat-violations">0</div>
+        <div class="stat-label">Violations</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-time">00:00</div>
+        <div class="stat-label">Elapsed</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value amber" id="stat-warnings">0</div>
+        <div class="stat-label">Warnings</div>
+      </div>
+    </div>
+
+    <!-- Analytics Summary -->
+    <div class="analytics-section">
+      <div class="section-header">
+        <span class="section-label">Behaviour Analytics</span>
+        <span class="analytics-badge" id="analytics-badge">LIVE</span>
+      </div>
+      <div class="analytics-grid" id="analytics-grid">
+        <div class="analytic-cell"><div class="ac-val" id="ac-tab">0</div><div class="ac-label">Tab Switches</div></div>
+        <div class="analytic-cell"><div class="ac-val" id="ac-copy">0</div><div class="ac-label">Copy Events</div></div>
+        <div class="analytic-cell"><div class="ac-val" id="ac-fs">0</div><div class="ac-label">FS Exits</div></div>
+        <div class="analytic-cell"><div class="ac-val" id="ac-face">0</div><div class="ac-label">Face Absent</div></div>
+      </div>
+    </div>
+
+    <!-- Event Timeline -->
+    <div class="timeline-section">
+      <div class="section-header">
+        <span class="section-label">Activity Log</span>
+        <button class="clear-btn" id="clear-log-btn">Clear</button>
+      </div>
+      <div class="timeline" id="event-timeline">
+        <div class="timeline-empty">No events recorded yet.</div>
+      </div>
+    </div>
+
+    <!-- End Exam -->
+    <button class="btn-end" id="end-exam-btn">End Exam Session</button>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
